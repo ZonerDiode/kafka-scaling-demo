@@ -1,0 +1,24 @@
+### How to Use This Cluster
+🎯 Why this Compose file is ideal for your scaling demo
+• 	3 brokers → lets you show partition distribution and broker load
+• 	KRaft mode → no ZooKeeper complexity
+• 	External ports → easy for your producer/consumer services
+• 	Kafka UI → perfect for visualizing lag, partitions, and scaling effects
+• 	Stable cluster ID → consistent restarts
+
+## Start it
+docker compose up -d
+
+## Verify brokers
+docker exec -it kafka1 kafka-broker-api-versions --bootstrap-server kafka1:9092
+
+## Create a topic
+docker exec -it kafka1 kafka-topics `
+  --create `
+  --topic events.raw `
+  --partitions 1 `
+  --replication-factor 3 `
+  --bootstrap-server kafka1:9092
+
+## Open the UI
+http://localhost:8080
