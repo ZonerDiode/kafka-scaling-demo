@@ -4,6 +4,12 @@ docker compose up -d kafka1 kafka2 kafka3
 Write-Host "Waiting for brokers to become healthy..."
 Start-Sleep -Seconds 10
 
+Write-Host "Creating topic ..."
+docker exec -it kafka1 kafka-topics --create --topic events.raw --partitions 1 --replication-factor 3 --bootstrap-server kafka1:9092
+
+Write-Host "Waiting for topic to become healthy..."
+Start-Sleep -Seconds 3
+
 Write-Host "=== Stage 2: Starting Producer Service ==="
 docker compose up -d producer
 
@@ -24,5 +30,5 @@ Start-Sleep -Seconds 5
 
 Write-Host "=== All services started ==="
 Write-Host "Kafka UI: http://localhost:8080"
-Write=Host "Swagger UI: http://localhost:8081/swagger-ui.html"
+Write-Host "Swagger UI: http://localhost:8081/swagger-ui.html"
 Write-Host "Use 'docker compose logs -f <service>' to observe behavior."
