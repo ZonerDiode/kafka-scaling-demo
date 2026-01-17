@@ -20,5 +20,6 @@ docker exec -it kafka1 kafka-topics `
   --replication-factor 3 `
   --bootstrap-server kafka1:9092
 
-## Open the UI
-http://localhost:8080
+## Open the UIs
+- Kafka cluster UI - http://localhost:8080
+- Producer Swagger - http://localhost:8081
