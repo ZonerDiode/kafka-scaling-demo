@@ -12,6 +12,8 @@ public class RawEventListener {
     
     @KafkaListener(topics = "events.raw", groupId = "raw-events-consumer")
     public void listen(String message) {
+        
         logger.info("Received raw event: {}", message);
+        
     }
 }
