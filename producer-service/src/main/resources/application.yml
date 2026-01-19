@@ -1,6 +1,8 @@
-server:
-  port: 8081
-
 spring:
   application:
     name: kafka-producer
+app:
+  kafka:
+    topic: ${TOPIC_NAME:demo-topic}
+    keytype: ${KEY_STRATEGY:good}
+    rate: ${MESSAGE_RATE:10}

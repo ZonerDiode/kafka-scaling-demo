@@ -2,7 +2,6 @@ package com.example.producer;
 
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringSerializer;
-import org.springframework.boot.kafka.autoconfigure.KafkaProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
@@ -17,16 +16,14 @@ import java.util.Map;
 public class KafkaProducerConfig {
 
     @Bean
-    public ProducerFactory<String, String> producerFactory(KafkaProperties kafkaProperties) {
+    public ProducerFactory<String, String> producerFactory() {
         
         Map<String, Object> config = new HashMap<>();
 
-        config.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaProperties.getBootstrapServers());
+        config.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, System.getenv().getOrDefault("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"));
         config.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
         config.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-
-        // Useful for scaling tests
-        config.put(ProducerConfig.ACKS_CONFIG, "all");
+        config.put(ProducerConfig.ACKS_CONFIG, "1");
         config.put(ProducerConfig.LINGER_MS_CONFIG, 5);
         config.put(ProducerConfig.BATCH_SIZE_CONFIG, 32_768);
         config.put(ProducerConfig.COMPRESSION_TYPE_CONFIG, "zstd");

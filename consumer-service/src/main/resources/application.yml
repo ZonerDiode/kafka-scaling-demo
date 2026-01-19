@@ -1,3 +1,7 @@
 spring:
   application:
     name: kafka-consumer
+app:
+  kafka:
+    topic: ${TOPIC_NAME:demo-topic}
+    group: ${CONSUMER_GROUP:demo-group}

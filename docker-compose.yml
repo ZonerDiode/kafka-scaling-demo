@@ -1,123 +1,83 @@
+version: '3.8'
+
 services:
-  # ---------------------------------------------------------
-  # Kafka Broker 1
-  # ---------------------------------------------------------
-  kafka1:
-    image: confluentinc/cp-kafka:7.5.0
-    container_name: kafka1
-    hostname: kafka1
-    ports:
-      - "19092:19092"
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
     environment:
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka1:29093,2@kafka2:29093,3@kafka3:29093"
-      KAFKA_LISTENERS: "PLAINTEXT://kafka1:9092,CONTROLLER://kafka1:29093,EXTERNAL://0.0.0.0:19092"
-      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka1:9092,EXTERNAL://localhost:19092"
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT"
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_LOG_DIRS: "/var/lib/kafka/data"
-      CLUSTER_ID: "q1JtQ2p6Qk2Yk0pJQ0p5Wg=="
-    volumes:
-      - kafka1-data:/var/lib/kafka/data
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
 
-  # ---------------------------------------------------------
-  # Kafka Broker 2
-  # ---------------------------------------------------------
-  kafka2:
+  kafka:
+    container_name: kafka
     image: confluentinc/cp-kafka:7.5.0
-    container_name: kafka2
-    hostname: kafka2
-    ports:
-      - "29092:29092"
-    environment:
-      KAFKA_NODE_ID: 2
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka1:29093,2@kafka2:29093,3@kafka3:29093"
-      KAFKA_LISTENERS: "PLAINTEXT://kafka2:9092,CONTROLLER://kafka2:29093,EXTERNAL://0.0.0.0:29092"
-      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka2:9092,EXTERNAL://localhost:29092"
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT"
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_LOG_DIRS: "/var/lib/kafka/data"
-      CLUSTER_ID: "q1JtQ2p6Qk2Yk0pJQ0p5Wg=="
-    volumes:
-      - kafka2-data:/var/lib/kafka/data
     depends_on:
-      - kafka1
-
-  # ---------------------------------------------------------
-  # Kafka Broker 3
-  # ---------------------------------------------------------
-  kafka3:
-    image: confluentinc/cp-kafka:7.5.0
-    container_name: kafka3
-    hostname: kafka3
+      - zookeeper
     ports:
-      - "39092:39092"
+      - "9092:9092"
     environment:
-      KAFKA_NODE_ID: 3
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka1:29093,2@kafka2:29093,3@kafka3:29093"
-      KAFKA_LISTENERS: "PLAINTEXT://kafka3:9092,CONTROLLER://kafka3:29093,EXTERNAL://0.0.0.0:39092"
-      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka3:9092,EXTERNAL://localhost:39092"
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT"
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_LOG_DIRS: "/var/lib/kafka/data"
-      CLUSTER_ID: "q1JtQ2p6Qk2Yk0pJQ0p5Wg=="
-    volumes:
-      - kafka3-data:/var/lib/kafka/data
-    depends_on:
-      - kafka1
-      - kafka2
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
 
-  # ---------------------------------------------------------
-  # Kafka UI
-  # ---------------------------------------------------------
+  producer:
+    build:
+      context: ./producer-service
+      dockerfile: Dockerfile
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      TOPIC_NAME: demo-topic
+      KEY_STRATEGY: good
+      MESSAGE_RATE: 10
+    command: ["sh", "-c", "sleep 10 && java -jar /app/producer.jar"]
+
+  consumer:
+    build:
+      context: ./consumer-service
+      dockerfile: Dockerfile
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      TOPIC_NAME: demo-topic
+      CONSUMER_GROUP: demo-group
+    command: ["sh", "-c", "sleep 15 && java -jar /app/consumer.jar"]
+    deploy:
+      replicas: 1
+
+  # Dashboard control service
+  dashboard:
+    build:
+      context: ./dashboard-service
+      dockerfile: Dockerfile
+    depends_on:
+      - kafka
+    ports:
+      - "3000:3000"
+    environment:
+      KAFKA_CONTAINER: kafka
+      BOOTSTRAP_SERVERS: kafka:29092
+      TOPIC_NAME: demo-topic
+      CONSUMER_GROUP: demo-group
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: ["sh", "-c", "sleep 5 && npm start"]
+
+  # Basic Kafka monitor UI
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: kafka-ui
+    depends_on:
+      - kafka
     ports:
       - "8080:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: local
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "kafka1:9092,kafka2:9092,kafka3:9092"
-    depends_on:
-      - kafka1
-      - kafka2
-      - kafka3
-
-  # ---------------------------------------------------------
-  # Producer Service (Needs docker image)
-  # ---------------------------------------------------------
-  producer:
-    build: ./producer-service
-    container_name: producer
-    depends_on:
-      - kafka1
-      - kafka2
-      - kafka3
-    environment:
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka1:9092,kafka2:9092,kafka3:9092
-    ports:
-        - "8081:8081"
-
-  # ---------------------------------------------------------
-  # Consumer Service (Needs docker image)
-  # ---------------------------------------------------------
-  consumer:
-    build: ./consumer-service
-    container_name: consumer
-    depends_on:
-      - kafka1
-      - kafka2
-      - kafka3
-    environment:
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka1:9092,kafka2:9092,kafka3:9092
-
-volumes:
-  kafka1-data:
-  kafka2-data:
-  kafka3-data:
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "kafka:29092"
