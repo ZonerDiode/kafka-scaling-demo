@@ -11,7 +11,8 @@ services:
     container_name: kafka
     image: confluentinc/cp-kafka:7.5.0
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_started
     ports:
       - "9092:9092"
     environment:
@@ -21,7 +22,7 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
 
   producer:
     container_name: producer
@@ -29,28 +30,44 @@ services:
       context: ./producer-service
       dockerfile: Dockerfile
     depends_on:
-      - kafka
+      kafka:
+        condition: service_started
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      TOPIC_NAME: demo-topic
-      KEY_STRATEGY: good
-      MESSAGE_RATE: 10
-    command: ["sh", "-c", "sleep 10 && java -jar /app/producer.jar"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://producer:8081/actuator/health"]
+      interval: 5s
+      timeout: 3s
 
   consumer:
     build:
       context: ./consumer-service
       dockerfile: Dockerfile
     depends_on:
-      - kafka
+      kafka:
+        condition: service_started
+      producer:
+        condition: service_healthy
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       TOPIC_NAME: demo-topic
       CONSUMER_GROUP: demo-group
-    command: ["sh", "-c", "sleep 15 && java -jar /app/consumer.jar"]
     deploy:
-      replicas: 4
-    restart: always
+      replicas: 3
+
+  consumer-single:
+    build:
+      context: ./consumer-service
+      dockerfile: Dockerfile
+    depends_on:
+      kafka:
+        condition: service_started
+      producer:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      TOPIC_NAME: demo-topic-single
+      CONSUMER_GROUP: demo-group-single
 
   # Dashboard control service
   dashboard:
@@ -59,24 +76,26 @@ services:
       context: ./dashboard-service
       dockerfile: Dockerfile
     depends_on:
-      - kafka
+      kafka:
+        condition: service_started
+      producer:
+        condition: service_healthy
     ports:
       - "3000:3000"
     environment:
       KAFKA_CONTAINER: kafka
       BOOTSTRAP_SERVERS: kafka:29092
-      TOPIC_NAME: demo-topic
-      CONSUMER_GROUP: demo-group
+      PRODUCER_URL: http://producer:8081
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    command: ["sh", "-c", "sleep 5 && npm start"]
 
   # Basic Kafka monitor UI
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: kafka-ui
     depends_on:
-      - kafka
+      kafka:
+        condition: service_started
     ports:
       - "8080:8080"
     environment:

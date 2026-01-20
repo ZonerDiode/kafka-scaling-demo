@@ -1,8 +1,8 @@
 // server.js - Node.js backend for Kafka demo control
 const express = require('express');
 const WebSocket = require('ws');
-const { exec } = require('child_process');
-const util = require('util');
+const { exec } = require('node:child_process');
+const util = require('node:util');
 const execPromise = util.promisify(exec);
 
 const app = express();
@@ -20,8 +20,32 @@ let metricsInterval;
 // Kafka configuration
 const KAFKA_CONTAINER = process.env.KAFKA_CONTAINER || 'kafka';
 const BOOTSTRAP_SERVERS = process.env.BOOTSTRAP_SERVERS || 'localhost:9092';
-const TOPIC_NAME = process.env.TOPIC_NAME || 'demo-topic';
-const CONSUMER_GROUP = process.env.CONSUMER_GROUP || 'demo-group';
+const PRODUCER_URL = process.env.PRODUCER_URL || 'http://producer:8081';
+
+// Stage configurations
+const STAGE_CONFIGS = {
+    1: {
+        endpoint: `${PRODUCER_URL}/api/run-demo-topic-single`,
+        topicName: 'demo-topic-single',
+        consumerGroup: 'demo-group-single',
+        partitions: 1,
+        description: 'Single partition, single key'
+    },
+    2: {
+        endpoint: `${PRODUCER_URL}/api/run-demo-topic-hot`,
+        topicName: 'demo-topic',
+        consumerGroup: 'demo-group',
+        partitions: 4,
+        description: 'Multiple partitions, hot partition'
+    },
+    3: {
+        endpoint: `${PRODUCER_URL}/api/run-demo-topic`,
+        topicName: 'demo-topic',
+        consumerGroup: 'demo-group',
+        partitions: 4,
+        description: 'Multiple partitions, balanced'
+    }
+};
 
 // Execute Kafka commands
 async function execKafkaCommand(command) {
@@ -37,9 +61,10 @@ async function execKafkaCommand(command) {
 }
 
 // Get consumer group lag
-async function getConsumerGroupLag() {
-    const cmd = `kafka-consumer-groups --bootstrap-server ${BOOTSTRAP_SERVERS} --describe --group ${CONSUMER_GROUP}`;
+async function getConsumerGroupLag(topicName, consumerGroup) {
+    const cmd = `kafka-consumer-groups --bootstrap-server ${BOOTSTRAP_SERVERS} --describe --group ${consumerGroup}`;
     const result = await execKafkaCommand(cmd);
+    const groupReplace = consumerGroup + '-1';
     
     if (!result.success || !result.output) {
         return { partitions: [], totalLag: 0, consumers: 0 };
@@ -51,8 +76,7 @@ async function getConsumerGroupLag() {
     const activeConsumers = new Set();
 
     lines.forEach(line => {
-        
-		// Skip header, empty lines, and error messages
+        // Skip header, empty lines, and error messages
         if (!line.trim() || 
             line.includes('GROUP') || 
             line.includes('TOPIC') ||
@@ -66,16 +90,14 @@ async function getConsumerGroupLag() {
         
         // Expected format: GROUP TOPIC PARTITION CURRENT-OFFSET LOG-END-OFFSET LAG CONSUMER-ID HOST CLIENT-ID
         // Index:            0     1     2         3              4              5   6           7    8
-        
-        if (parts.length >= 6 && parts[1] === TOPIC_NAME) {
-            const partition = parseInt(parts[2]);
-            const currentOffset = parseInt(parts[3]) || 0;
-            const logEndOffset = parseInt(parts[4]) || 0;
-            const lag = parseInt(parts[5]) || 0;
-            const consumerId = (parts[6] || '-').replace(CONSUMER_GROUP, '');
+        if (parts.length >= 6 && parts[1] === topicName) {
+            const partition = Number.parseInt(parts[2]);
+            const currentOffset = Number.parseInt(parts[3]) || 0;
+            const logEndOffset = Number.parseInt(parts[4]) || 0;
+            const lag = Number.parseInt(parts[5]) || 0;
+            const consumerId = (parts[6] || '-').replace(groupReplace, '');
 
-            // Only add if partition number is valid
-            if (!isNaN(partition)) {
+            if (!Number.isNaN(partition)) {
                 partitions.push({
                     partition,
                     currentOffset,
@@ -95,8 +117,6 @@ async function getConsumerGroupLag() {
     // Sort by partition number
     partitions.sort((a, b) => a.partition - b.partition);
 
-    console.log('Parsed partitions:', partitions); // Debug log
-
     return {
         partitions,
         totalLag,
@@ -105,11 +125,10 @@ async function getConsumerGroupLag() {
 }
 
 // Get topic details
-async function getTopicDetails() {
-    const cmd = `kafka-topics --bootstrap-server ${BOOTSTRAP_SERVERS} --describe --topic ${TOPIC_NAME}`;
+async function getTopicDetails(topicName) {
+    const cmd = `kafka-topics --bootstrap-server ${BOOTSTRAP_SERVERS} --describe --topic ${topicName}`;
     const result = await execKafkaCommand(cmd);
     
-    // Topic doesn't exist yet - this is OK
     if (!result.success || result.output.includes('does not exist')) {
         return { partitionCount: 0, exists: false };
     }
@@ -123,84 +142,48 @@ async function getTopicDetails() {
     };
 }
 
-// Create or modify topic
-async function setupTopic(partitions) {
-    // Try to delete existing topic
-    await execKafkaCommand(
-        `kafka-topics --bootstrap-server ${BOOTSTRAP_SERVERS} --delete --topic ${TOPIC_NAME}`
-    );
-    
-    // Wait a bit for deletion
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    // Create new topic
-    const cmd = `kafka-topics --bootstrap-server ${BOOTSTRAP_SERVERS} --create --topic ${TOPIC_NAME} --partitions ${partitions} --replication-factor 1`;
-    const result = await execKafkaCommand(cmd);
-    
-    return result.success;
-}
-
-// Send stage configuration to producer
-async function configureProducer(stage) {
-    // Send signal to producer container via environment variable update and restart
-    const envVars = {
-        1: { KEY_STRATEGY: 'single', MESSAGE_RATE: '10' },
-        2: { KEY_STRATEGY: 'bad', MESSAGE_RATE: '5' },
-        3: { KEY_STRATEGY: 'good', MESSAGE_RATE: '5' }
-    };
-
-    const config = envVars[stage];
-    if (!config) return { success: false };
-
-    try {
-        // Update producer key strategy via HTTP
-        const res = await fetch(`http://producer:8081/change-key-strategy/${config.KEY_STRATEGY}`, { method: "POST" });
-        const text = await res.text();
-        console.log("Changed Producer strategy, response:", text);
-        return { success: true };
-    } catch (error) {
-        return { success: false, error: error.message };
-    }
-}
-
-// Activate stage
+// Activate stage by calling producer endpoint
 async function activateStage(stageNum) {
     console.log(`Activating stage ${stageNum}...`);
-    currentStage = stageNum;
-
-    // CLEAR previous offset tracking for clean rate calculation
-    previousOffsets = {};
-
-    const stageConfigs = {
-        1: { partitions: 1, consumers: 1, keyStrategy: 'single' },
-        2: { partitions: 4, consumers: 4, keyStrategy: 'bad' },
-        3: { partitions: 4, consumers: 4, keyStrategy: 'good' }
-    };
-
-    const config = stageConfigs[stageNum];
+    
+    const config = STAGE_CONFIGS[stageNum];
     if (!config) {
         return { success: false, error: 'Invalid stage' };
     }
 
     try {
-        // Setup topic with correct partitions
-        console.log(`Setting up topic with ${config.partitions} partitions...`);
-        await setupTopic(config.partitions);
-
-        // Wait for topic to be ready
-        await new Promise(resolve => setTimeout(resolve, 3000));
-
-        // Configure producer
-        console.log(`Configuring producer with ${config.keyStrategy} strategy...`);
-        await configureProducer(stageNum);
-
-        // Wait for everything to stabilize
+        // Clear previous offset tracking for clean rate calculation
+        previousOffsets = {};
+        
+        // Call producer endpoint to activate the stage
+        console.log(`Calling producer endpoint: ${config.endpoint}`);
+        const response = await fetch(config.endpoint, { 
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Producer endpoint returned ${response.status}`);
+        }
+        
+        const result = await response.text();
+        console.log(`Producer response: ${result}`);
+        
+        // Update current stage
+        currentStage = stageNum;
+        
+        // Wait for things to stabilize
         await new Promise(resolve => setTimeout(resolve, 2000));
 
         broadcastToClients({
             type: 'stage-activated',
             stage: stageNum,
-            config
+            config: {
+                partitions: config.partitions,
+                description: config.description
+            }
         });
 
         return { success: true, stage: stageNum };
@@ -221,15 +204,26 @@ function broadcastToClients(data) {
 
 // Collect and broadcast metrics
 async function collectMetrics() {
+    if (currentStage === 0) {
+        return null;
+    }
+
+    const config = STAGE_CONFIGS[currentStage];
+    if (!config) {
+        return null;
+    }
+
     try {
         const [lagData, topicData] = await Promise.all([
-            getConsumerGroupLag(),
-            getTopicDetails()
+            getConsumerGroupLag(config.topicName, config.consumerGroup),
+            getTopicDetails(config.topicName)
         ]);
 
         // Only log when topic exists
         if (topicData.exists && lagData.partitions.length > 0) {
             console.log('Metrics collected:', {
+                stage: currentStage,
+                topic: config.topicName,
                 partitions: lagData.partitions.length,
                 consumers: lagData.consumers,
                 totalLag: lagData.totalLag
@@ -283,7 +277,7 @@ function calculateMessageRate(partitions) {
 
 // REST API endpoints
 app.post('/api/stage/:stageNum', async (req, res) => {
-    const stageNum = parseInt(req.params.stageNum);
+    const stageNum = Number.parseInt(req.params.stageNum);
     const result = await activateStage(stageNum);
     res.json(result);
 });
@@ -294,9 +288,19 @@ app.get('/api/metrics', async (req, res) => {
 });
 
 app.get('/api/status', async (req, res) => {
+    if (currentStage === 0) {
+        return res.json({
+            currentStage: 0,
+            partitionCount: 0,
+            consumerCount: 0,
+            totalLag: 0
+        });
+    }
+
+    const config = STAGE_CONFIGS[currentStage];
     const [lagData, topicData] = await Promise.all([
-        getConsumerGroupLag(),
-        getTopicDetails()
+        getConsumerGroupLag(config.topicName, config.consumerGroup),
+        getTopicDetails(config.topicName)
     ]);
 
     res.json({
@@ -307,10 +311,21 @@ app.get('/api/status', async (req, res) => {
     });
 });
 
-app.get('/api/debug/consumer-group', async (req, res) => {
-    const cmd = `kafka-consumer-groups --bootstrap-server ${BOOTSTRAP_SERVERS} --describe --group ${CONSUMER_GROUP}`;
+app.get('/api/debug/consumer-group/:stage?', async (req, res) => {
+    const stage = req.params.stage ? Number.parseInt(req.params.stage) : currentStage;
+    const config = STAGE_CONFIGS[stage];
+    
+    if (!config) {
+        return res.json({ error: 'Invalid stage' });
+    }
+
+    const cmd = `kafka-consumer-groups --bootstrap-server ${BOOTSTRAP_SERVERS} --describe --group ${config.consumerGroup}`;
     const result = await execKafkaCommand(cmd);
+    
     res.json({
+        stage,
+        topic: config.topicName,
+        consumerGroup: config.consumerGroup,
         success: result.success,
         output: result.output,
         error: result.error
@@ -323,7 +338,9 @@ wss.on('connection', (ws) => {
 
     // Send current status immediately
     collectMetrics().then(metrics => {
-        ws.send(JSON.stringify(metrics));
+        if (metrics) {
+            ws.send(JSON.stringify(metrics));
+        }
     });
 
     ws.on('close', () => {
@@ -341,16 +358,21 @@ function startMetricsCollection() {
         collectMetrics().catch(err => {
             console.error('Metrics collection error:', err);
         });
-    }, 2000); // Collect every 2 seconds
+    }, 400); // Collect every 400 milliseconds
 }
 
 // HTTP server upgrade for WebSocket
 const server = app.listen(port, () => {
     console.log(`Kafka Demo Backend running on port ${port}`);
     console.log(`WebSocket server ready`);
-    activateStage(1);
+    console.log(`Stage configurations:`, STAGE_CONFIGS);
     startMetricsCollection();
 });
+
+// Disable HTTP timeouts to prevent WebSocket connections from being closed after 60 seconds
+// This is necessary for Node.js 18+ which introduced default timeouts
+server.headersTimeout = 0;
+server.requestTimeout = 0;
 
 server.on('upgrade', (request, socket, head) => {
     wss.handleUpgrade(request, socket, head, (ws) => {

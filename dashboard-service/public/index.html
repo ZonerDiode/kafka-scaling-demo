@@ -294,7 +294,7 @@
                 <div class="stage-details">
                     <div><strong>Partitions:</strong> 1</div>
                     <div><strong>Consumers:</strong> 1</div>
-                    <div><strong>Key Strategy:</strong> Single key</div>
+                    <div><strong>Key Strategy:</strong> Single partition</div>
                 </div>
                 <button onclick="activateStage(1)">Activate Stage 1</button>
             </div>
@@ -303,9 +303,9 @@
                 <h3>Stage 2: Hot Partition <span class="badge badge-hot">Problem</span></h3>
                 <p class="stage-description">Bad key strategy causes uneven distribution - one partition gets most messages.</p>
                 <div class="stage-details">
-                    <div><strong>Partitions:</strong> 4</div>
-                    <div><strong>Consumers:</strong> 4</div>
-                    <div><strong>Key Strategy:</strong> 80% → same key</div>
+                    <div><strong>Partitions:</strong> 3</div>
+                    <div><strong>Consumers:</strong> 3</div>
+                    <div><strong>Key Strategy:</strong> 50% → same partition</div>
                 </div>
                 <button onclick="activateStage(2)">Activate Stage 2</button>
             </div>
@@ -314,9 +314,9 @@
                 <h3>Stage 3: Balanced <span class="badge badge-balanced">Optimal</span></h3>
                 <p class="stage-description">Good key strategy distributes messages evenly across all partitions.</p>
                 <div class="stage-details">
-                    <div><strong>Partitions:</strong> 4</div>
-                    <div><strong>Consumers:</strong> 4</div>
-                    <div><strong>Key Strategy:</strong> Round-robin (10 keys)</div>
+                    <div><strong>Partitions:</strong> 3</div>
+                    <div><strong>Consumers:</strong> 3</div>
+                    <div><strong>Key Strategy:</strong> Distributed partitions</div>
                 </div>
                 <button onclick="activateStage(3)">Activate Stage 3</button>
             </div>
@@ -374,7 +374,7 @@
                     maintainAspectRatio: false,
                     scales: {
                         y: {
-                            beginAtZero: true,
+                            suggestedMax: 200,
                             title: { display: true, text: 'Messages' }
                         }
                     }

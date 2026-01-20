@@ -1,10 +1,15 @@
 server:
   port: 8081
+  address: 0.0.0.0
 spring:
   application:
     name: kafka-producer
-app:
-  kafka:
-    topic: ${TOPIC_NAME:demo-topic}
-    keytype: ${KEY_STRATEGY:good}
-    rate: ${MESSAGE_RATE:10}
+management:
+  endpoint:
+    health:
+      group:
+        readiness:
+          # Include standard readiness checks + our custom kafka check
+          include: readinessState, kafkaTopics
+      probes:
+        enabled: true

@@ -6,9 +6,9 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Service;
 
 @Service
-public class RawEventListener {
+public class EventListener {
 
-    private static final Logger logger = LoggerFactory.getLogger(RawEventListener.class);
+    private static final Logger logger = LoggerFactory.getLogger(EventListener.class);
     
     @KafkaListener(
             topics = "${app.kafka.topic}", 
@@ -16,10 +16,10 @@ public class RawEventListener {
     )
     public void listen(String message) {
         
-        logger.info("Received raw event: {}", message);
+        logger.info("Received event: {}", message);
         
         try{
-            Thread.sleep(2);
+            Thread.sleep(10);
         }
         catch (InterruptedException ex) {
             logger.error("Thread was Interrupted.", ex);
