@@ -1,5 +1,6 @@
 package com.example.producer;
 
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -79,7 +80,7 @@ public class EventProducer {
             default:
                 // GOOD STRATEGY: Round-robin distribution
                 // This ensures even distribution across partitions
-                return "key-" + (messageNum % 10);
+                return UUID.randomUUID().toString();
         }
     }
 }
