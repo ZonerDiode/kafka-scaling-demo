@@ -19,7 +19,7 @@ public class RawEventListener {
         logger.info("Received raw event: {}", message);
         
         try{
-            Thread.sleep(5);
+            Thread.sleep(2);
         }
         catch (InterruptedException ex) {
             logger.error("Thread was Interrupted.", ex);

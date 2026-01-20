@@ -1,7 +1,7 @@
 FROM node:18-alpine
 
 # Install Docker CLI for controlling containers
-RUN apk add --no-cache docker-cli
+RUN apk add --no-cache docker-cli docker-cli-compose
 
 WORKDIR /app
 

@@ -72,7 +72,7 @@ async function getConsumerGroupLag() {
             const currentOffset = parseInt(parts[3]) || 0;
             const logEndOffset = parseInt(parts[4]) || 0;
             const lag = parseInt(parts[5]) || 0;
-            const consumerId = parts[6] || '-';
+            const consumerId = (parts[6] || '-').replace(CONSUMER_GROUP, '');
 
             // Only add if partition number is valid
             if (!isNaN(partition)) {
@@ -140,19 +140,6 @@ async function setupTopic(partitions) {
     return result.success;
 }
 
-// Scale consumers
-async function scaleConsumers(count) {
-    try {
-        const { stdout } = await execPromise(
-            `docker-compose up -d --scale consumer=${count}`
-        );
-        return { success: true, output: stdout };
-    } catch (error) {
-        console.error('Scale error:', error);
-        return { success: false, error: error.message };
-    }
-}
-
 // Send stage configuration to producer
 async function configureProducer(stage) {
     // Send signal to producer container via environment variable update and restart
@@ -166,18 +153,10 @@ async function configureProducer(stage) {
     if (!config) return { success: false };
 
     try {
-        // Update producer environment and restart
-        await execPromise(
-            `docker-compose up -d producer --force-recreate --no-deps`
-        );
-        
-        // Set environment variables via docker exec
-        for (const [key, value] of Object.entries(config)) {
-            await execPromise(
-                `docker exec producer sh -c "export ${key}=${value}"`
-            );
-        }
-        
+        // Update producer key strategy via HTTP
+        const res = await fetch(`http://producer:8081/change-key-strategy/${config.KEY_STRATEGY}`, { method: "POST" });
+        const text = await res.text();
+        console.log("Changed Producer strategy, response:", text);
         return { success: true };
     } catch (error) {
         return { success: false, error: error.message };
@@ -188,6 +167,9 @@ async function configureProducer(stage) {
 async function activateStage(stageNum) {
     console.log(`Activating stage ${stageNum}...`);
     currentStage = stageNum;
+
+    // CLEAR previous offset tracking for clean rate calculation
+    previousOffsets = {};
 
     const stageConfigs = {
         1: { partitions: 1, consumers: 1, keyStrategy: 'single' },
@@ -207,10 +189,6 @@ async function activateStage(stageNum) {
 
         // Wait for topic to be ready
         await new Promise(resolve => setTimeout(resolve, 3000));
-
-        // Scale consumers
-        console.log(`Scaling to ${config.consumers} consumers...`);
-        await scaleConsumers(config.consumers);
 
         // Configure producer
         console.log(`Configuring producer with ${config.keyStrategy} strategy...`);
@@ -370,6 +348,7 @@ function startMetricsCollection() {
 const server = app.listen(port, () => {
     console.log(`Kafka Demo Backend running on port ${port}`);
     console.log(`WebSocket server ready`);
+    activateStage(1);
     startMetricsCollection();
 });
 

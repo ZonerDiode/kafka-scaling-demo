@@ -36,16 +36,22 @@ public class EventProducer {
                 generateKey(count),
                 String.format("Event message from %s", RandomNameGenerator.generateName()));
         
-        if (count % 10 == 0) {
+        if (count % 100 == 0) {
             logger.info("Sent {} messages using key type {}", count, keytype);
         }
     }
+
+    public void changeKeyStrategy(String strategy) {
+        this.keytype = strategy;
+        logger.info("Key strategy was updated to {}", strategy);
+    }
+
     
     /**
      * Generate key based on current strategy
      * 
      * SINGLE: Always uses same key (for 1 partition scenario)
-     * BAD: 80% of messages use same key, causing hot partition
+     * BAD: Heavily skewed distribution, causing hot partition
      * GOOD: Evenly distributed keys across partitions
      */
     private String generateKey(long messageNum) {
@@ -56,13 +62,17 @@ public class EventProducer {
                 return "key-0";
                 
             case "bad":
-                // BAD STRATEGY: 80% of messages use same key
-                // This creates a "hot partition" problem
-                if (messageNum % 100 < 80) {
-                    return "hot-key"; // Most messages use this key
+                // BAD STRATEGY: Heavily skewed distribution
+                // 70% → partition 0, 15% → partition 1, 10% → partition 2, 5% → partition 3
+                long mod = messageNum % 100;
+                if (mod < 70) {
+                    return "hot-key-0"; // 70% to one partition
+                } else if (mod < 85) {
+                    return "hot-key-1"; // 15%
+                } else if (mod < 95) {
+                    return "hot-key-2"; // 10%
                 } else {
-                    // Remaining 20% distributed among other keys
-                    return "key-" + (messageNum % 3);
+                    return "hot-key-3"; // 5%
                 }
                 
             case "good":

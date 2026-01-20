@@ -507,6 +507,20 @@
             
             document.getElementById('currentStageTitle').textContent = stageTitles[data.stage];
             addLog(`🎯 ${stageTitles[data.stage]} activated`, 'success');
+
+            // CLEAR CHARTS - reset to empty state
+            lagChart.data.labels = [];
+            lagChart.data.datasets[0].data = [];
+            lagChart.data.datasets[0].backgroundColor = [];
+            lagChart.update();
+            
+            consumerChart.data.labels = [];
+            consumerChart.data.datasets[0].data = [];
+            consumerChart.update();
+            
+            // Reset status values
+            document.getElementById('totalLag').textContent = '0';
+            document.getElementById('messageRate').textContent = '0';
         }
 
         // Activate stage via API
