@@ -19,16 +19,17 @@ import org.springframework.kafka.core.KafkaAdmin;
 public class KafkaConfiguration {
 
     @Bean
-    public ProducerFactory<String, String> producerFactory() {
+    public ProducerFactory<String, String> producerFactory(ApplicationConfig cfg) {
         
         Map<String, Object> config = new HashMap<>();
-        config.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, System.getenv().getOrDefault("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"));
+        config.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, cfg.bootstrapServers());
         config.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
         config.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
         config.put(ProducerConfig.ACKS_CONFIG, "1");
-        config.put(ProducerConfig.LINGER_MS_CONFIG, 5);
+        config.put(ProducerConfig.LINGER_MS_CONFIG, 15);
         config.put(ProducerConfig.BATCH_SIZE_CONFIG, 32_768);
         config.put(ProducerConfig.COMPRESSION_TYPE_CONFIG, "zstd");
+        config.put(ProducerConfig.PARTITIONER_CLASS_CONFIG, EventPartitioner.class);
 
         return new DefaultKafkaProducerFactory<>(config);
     }
@@ -39,17 +40,17 @@ public class KafkaConfiguration {
     }
     
     @Bean
-    public KafkaAdmin kafkaAdmin() {
+    public KafkaAdmin kafkaAdmin(ApplicationConfig cfg) {
         
         Map<String, Object> config = new HashMap<>();
-        config.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, System.getenv().getOrDefault("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"));
+        config.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, cfg.bootstrapServers());
         return new KafkaAdmin(config);
     }
     
     @Bean
-    public NewTopic demoTopic() {
+    public NewTopic demoTopic(ApplicationConfig cfg) {
         return TopicBuilder.name(Topics.DEMO_TOPIC)
-                .partitions(3)
+                .partitions(cfg.numberOfPartitions())
                 .config("retention.ms", "10000")
                 .build();
     }

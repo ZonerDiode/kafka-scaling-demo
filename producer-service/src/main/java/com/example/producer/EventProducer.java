@@ -26,16 +26,18 @@ public class EventProducer {
     }
 
     /**
-    * Send events to a Kafka topic at a set rate using the specified {@link KeyGenerator.KeyType} 
-    * until {@link EventProducer#stop()} is called.
+    * Send events to a Kafka topic at a set rate using the specified {@link EventPartitioner.Strategy} 
+    * until {@link EventProducer#stop()} is called or send is called again.
     * 
      * @param topic The topic destination.
      * @param msRate Send every MilliSeconds.
-     * @param keyType The key type to create.
+     * @param keyStrategy The key strategy to use.
     */
-    public void send(String topic, long msRate, KeyGenerator.KeyType keyType) {
+    public void send(String topic, long msRate, EventPartitioner.Strategy keyStrategy) {
         
         stop();
+        
+        EventPartitioner.setMode(keyStrategy);
         
         currentTask = taskScheduler.scheduleAtFixedRate(() -> 
         {
@@ -43,11 +45,10 @@ public class EventProducer {
             
             kafkaTemplate.send(
                     topic, 
-                    KeyGenerator.generateKey(count, keyType),
                     String.format("Event message from %s", RandomNameGenerator.generateName()));
             
             if (count % 500 == 0) {
-                logger.info("Sent {} messages using key type {}", count, keyType);
+                logger.info("Sent {} messages using key strategy {}", count, keyStrategy);
             }
 
         }, Duration.ofMillis(msRate));
@@ -59,6 +60,6 @@ public class EventProducer {
     public void stop() {
         
         Optional.ofNullable(currentTask)
-                .ifPresent((t)-> t.cancel(true));
+                .ifPresent(t-> t.cancel(true));
     }
 }

@@ -8,18 +8,23 @@ import org.springframework.stereotype.Service;
 @Service
 public class EventListener {
 
+    private final ApplicationConfig config;
     private static final Logger logger = LoggerFactory.getLogger(EventListener.class);
     
+    public EventListener(ApplicationConfig config) {
+        this.config = config;
+    }
+
     @KafkaListener(
-            topics = "${app.kafka.topic}", 
-            groupId = "${app.kafka.group}"
+            topics = "${topic.name}", 
+            groupId = "${consumer.group}"
     )
     public void listen(String message) {
         
         logger.info("Received event: {}", message);
         
         try{
-            Thread.sleep(10);
+            Thread.sleep(config.millisecondsSimulatedWork());
         }
         catch (InterruptedException ex) {
             logger.error("Thread was Interrupted.", ex);

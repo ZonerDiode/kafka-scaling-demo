@@ -13,29 +13,37 @@ import org.springframework.web.bind.annotation.RestController;
 public class EventControlApi {
  
     private final EventProducer eventProducer;
+    private final ApplicationConfig config;
 
-    public EventControlApi(EventProducer eventProducer) {
+    public EventControlApi(EventProducer eventProducer, ApplicationConfig config) {
         this.eventProducer = eventProducer;
+        this.config = config;
     }
     
     @PostMapping("/run-demo-topic-single")
     public ResponseEntity<String> runDemoTopicSingle() {
 
-        eventProducer.send(Topics.DEMO_TOPIC_SINGLE, 10, KeyGenerator.KeyType.EVEN);
+        eventProducer.send(Topics.DEMO_TOPIC_SINGLE, 
+            config.millisecondsBetweenMessages(), 
+            EventPartitioner.Strategy.ROUND_ROBIN);
         return ResponseEntity.ok("Writing to single topic");
     }
     
     @PostMapping("/run-demo-topic")
     public ResponseEntity<String> runDemoTopic() {
 
-        eventProducer.send(Topics.DEMO_TOPIC, 5, KeyGenerator.KeyType.EVEN);
+        eventProducer.send(Topics.DEMO_TOPIC, 
+            config.millisecondsBetweenMessages(), 
+            EventPartitioner.Strategy.ROUND_ROBIN);
         return ResponseEntity.ok("Writing to distributed topic");
     }
 
     @PostMapping("/run-demo-topic-hot")
     public ResponseEntity<String> runDemoTopicHot() {
 
-        eventProducer.send(Topics.DEMO_TOPIC, 5, KeyGenerator.KeyType.HOT);
+        eventProducer.send(Topics.DEMO_TOPIC, 
+            config.millisecondsBetweenMessages(), 
+            EventPartitioner.Strategy.HOT_PARTITION);
         return ResponseEntity.ok("Writing to distributed topic with hot keys");
     }
 }

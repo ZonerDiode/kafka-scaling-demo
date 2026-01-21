@@ -2,38 +2,34 @@
 
 A hands-on demonstration showing Kafka's scaling techniques and pitfalls through observable stages.
 
-## Project Structure
-
-```
-kafka-scaling-demo/
-├── docker-compose.yml
-├── producer-service/
-│   ├── Dockerfile
-│   ├── pom.xml
-│   └── src/main/java/com/example/producer Classes
-├── consumer-service/
-│   ├── Dockerfile
-│   ├── pom.xml
-│   └── src/main/java/com/example/consumer Classes
-└── dashboard-service/
-    ├── Dockerfile
-    ├── package.json
-    ├── server.js
-    └── public/
-        └── index.html (dashboard)
-```
+![Screen Shot](assets/kafka-scale-demo.png)
 
 ## To Run:
+Change to the directory you placed the code, then run docker compose:
+- **cd kafka-scaling-demo**
+- **docker compose up -d**
+- **docker compose down -v** - when finished
 
-- cd kafka-scaling-demo
-- docker-compose up -d
-- view the dashboard @ http://localhost:3000 
-- view kafka monitor @ http://localhost:8080
+After startup view the dashboard @ http://localhost:3000
+
+Also includes standard kafka monitor @ http://localhost:8080
+
+## Configure From Docker Compose file
+To change settings, stop the containers (**docker compose down -v**) then edit these settings in docker-compose.yml:
+
+### Producer
+- **MILLISECONDS_BETWEEN_MESSAGES**: Controls the delay between messages, defaults to 1
+- **NUMBER_OF_PARTITIONS**: How many partitions to use for the topic, defaults to 6
+
+### Consumer
+- **MILLISECONDS_SIMULATED_WORK**: This is how many milliseconds the consumer waits before getting another message, defaults to 5
+- **replicas**: How many consumers to deploy, ideally at least as many as partitions, defaults to 6
 
 ## How It Works:
 
-- Click Stage Button → Dashboard calls producer/api/run-stage/X
-- Consumers → Simulate doing work
+- Click Stage Button → Dashboard calls producer/api/run-stage-X
+- Producer generates messages into the topic
+- Consumers read messages → Simulate doing work
 - Dashboard server monitors metrics → Polls Kafka every 400 ms
 - Dashboard server Streams to UI → Via WebSocket, charts update in real-time
 
@@ -52,10 +48,10 @@ kafka-scaling-demo/
 
 ### Stage 2: Hot Consumer
 - Demonstrates poor key strategy that causes uneven distribution among partitions
-- 3 Partitions dividing messages 50%, 30%, 20%
+- Partitions divide messages 50% into one partition, rest are split between remaining partitions
 - One partition starts to become overloaded
 
 ### Stage 3: Consumer Group Balanced
 - Demonstrates balanced key strategy that evenly distributes the messages across all partitions
-- 3 Partitions dividing messages evenly
-- Low lag across partitions
+- Partitions dividing messages evenly with round-robin strategy.
+- Even lag across partitions

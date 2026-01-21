@@ -32,12 +32,14 @@ services:
     depends_on:
       kafka:
         condition: service_started
-    environment:
-      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
     healthcheck:
       test: ["CMD", "curl", "-f", "http://producer:8081/actuator/health"]
       interval: 5s
       timeout: 3s
+    environment:
+      BOOTSTRAP_SERVERS: kafka:29092
+      MILLISECONDS_BETWEEN_MESSAGES: 1
+      NUMBER_OF_PARTITIONS: 6
 
   consumer:
     build:
@@ -49,11 +51,12 @@ services:
       producer:
         condition: service_healthy
     environment:
-      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      BOOTSTRAP_SERVERS: kafka:29092
       TOPIC_NAME: demo-topic
       CONSUMER_GROUP: demo-group
+      MILLISECONDS_SIMULATED_WORK: 5
     deploy:
-      replicas: 3
+      replicas: 6
 
   consumer-single:
     build:
@@ -65,9 +68,10 @@ services:
       producer:
         condition: service_healthy
     environment:
-      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      BOOTSTRAP_SERVERS: kafka:29092
       TOPIC_NAME: demo-topic-single
       CONSUMER_GROUP: demo-group-single
+      MILLISECONDS_SIMULATED_WORK: 5
 
   # Dashboard control service
   dashboard:
