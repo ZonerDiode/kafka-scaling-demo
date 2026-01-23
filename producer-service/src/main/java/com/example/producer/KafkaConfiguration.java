@@ -26,7 +26,7 @@ public class KafkaConfiguration {
         config.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
         config.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
         config.put(ProducerConfig.ACKS_CONFIG, "1");
-        config.put(ProducerConfig.LINGER_MS_CONFIG, 15);
+        config.put(ProducerConfig.LINGER_MS_CONFIG, 10);
         config.put(ProducerConfig.BATCH_SIZE_CONFIG, 32_768);
         config.put(ProducerConfig.COMPRESSION_TYPE_CONFIG, "zstd");
         config.put(ProducerConfig.PARTITIONER_CLASS_CONFIG, EventPartitioner.class);

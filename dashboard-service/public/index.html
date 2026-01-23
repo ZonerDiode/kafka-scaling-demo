@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kafka Scaling Demo</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
-    <link rel="stylesheet" href="/css/kafka.css">
+    <link rel="stylesheet" href="css/kafka.css">
 </head>
 <body>
     <div class="connection-status disconnected" id="connectionStatus">Connecting...</div>
@@ -17,7 +17,7 @@
         </header>
 
         <div class="status-banner">
-            <h2>Current Stage: <span id="currentStageTitle">Not Started</span></h2>
+            <h2>Current Status: <span id="currentStatusTitle">Ready</span></h2>
             <div class="status-info">
                 <div class="status-item">
                     <div class="status-value" id="partitionCount">0</div>
@@ -32,38 +32,55 @@
                     <div class="status-label">Total Lag</div>
                 </div>
                 <div class="status-item">
-                    <div class="status-value" id="messageRate">0</div>
-                    <div class="status-label">Msgs/sec</div>
+                    <div class="status-value" id="producerRate">0</div>
+                    <div class="status-label">Producing/sec</div>
+                </div>
+                <div class="status-item">
+                    <div class="status-value" id="consumerRate">0</div>
+                    <div class="status-label">Consuming/sec</div>
                 </div>
             </div>
         </div>
 
-        <div class="stage-controls">
-            <div class="stage-card" id="stage1Card">
-                <h3>Stage 1: Baseline</h3>
-                <p class="stage-description">Single partition limits scalability - only one consumer can process messages.</p>
-                <div class="stage-details">
-                    <div><strong>Key Strategy:</strong> Single partition</div>
+        <div class="producer-controls">
+            <div class="control-card">
+                <div class="control-header">
+                    <h3>🎛️ Producer Controls</h3>
+                    <p class="control-description">Configure and control message production</p>
                 </div>
-                <button onclick="activateStage(1)">Activate Stage 1</button>
-            </div>
-
-            <div class="stage-card" id="stage2Card">
-                <h3>Stage 2: Hot Partition <span class="badge badge-hot">Problem</span></h3>
-                <p class="stage-description">Hot key strategy causes uneven distribution - one partition gets most messages.</p>
-                <div class="stage-details">
-                    <div><strong>Key Strategy:</strong> 50% → same partition</div>
+                
+                <div class="control-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="producerCount">Number of Concurrent Producers</label>
+                            <input type="number" id="producerCount" min="1" max="20" value="1" />
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="msBetweenMessages">Producer Delay Between Messages (Milliseconds)</label>
+                            <input type="number" id="msBetweenMessages" min="0" max="1000" value="1" />
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="partitionStrategy">How messages are distributed across partitions</label>
+                        <select id="partitionStrategy">
+                            <option value="ROUND_ROBIN">Round Robin - Balanced Distribution</option>
+                            <option value="HOT_PARTITION">Hot Partition - Uneven Distribution (50% to one partition)</option>
+                        </select>
+                    </div>
+                    
+                    <div class="button-group">
+                        <button class="btn-primary" onclick="startProducer()" id="startBtn">
+                            ▶️ Start Producer
+                        </button>
+                        <button class="btn-secondary" onclick="stopProducer()" id="stopBtn" disabled>
+                            ⏹️ Stop Producer
+                        </button>
+                    </div>
+                    
+                    <div class="status-message" id="producerStatus"></div>
                 </div>
-                <button onclick="activateStage(2)">Activate Stage 2</button>
-            </div>
-
-            <div class="stage-card" id="stage3Card">
-                <h3>Stage 3: Balanced <span class="badge badge-balanced">Optimal</span></h3>
-                <p class="stage-description">Distributed key strategy distributes messages evenly across all partitions.</p>
-                <div class="stage-details">
-                    <div><strong>Key Strategy:</strong> Round Robin</div>
-                </div>
-                <button onclick="activateStage(3)">Activate Stage 3</button>
             </div>
         </div>
 
@@ -95,7 +112,7 @@
         
         let ws;
         let lagChart, consumerChart;
-        let currentStage = 0;
+        let isProducing = false;
 
         // Initialize charts
         function initCharts() {
@@ -189,8 +206,6 @@
         function handleMessage(data) {
             if (data.type === 'metrics') {
                 updateMetrics(data);
-            } else if (data.type === 'stage-activated') {
-                handleStageActivated(data);
             }
         }
 
@@ -199,7 +214,8 @@
             document.getElementById('partitionCount').textContent = data.partitionCount || 0;
             document.getElementById('consumerCount').textContent = data.consumerCount || 0;
             document.getElementById('totalLag').textContent = data.totalLag || 0;
-            document.getElementById('messageRate').textContent = data.messageRate || 0;
+            document.getElementById('producerRate').textContent = data.producerRate || 0;
+            document.getElementById('consumerRate').textContent = data.consumerRate || 0;
 
             // Update lag chart
             if (data.partitions && data.partitions.length > 0) {
@@ -235,59 +251,117 @@
             }
         }
 
-        function handleStageActivated(data) {
-            currentStage = data.stage;
+        // Start producer
+        async function startProducer() {
+            const producerCount = parseInt(document.getElementById('producerCount').value);
+            const msBetweenMessages = parseInt(document.getElementById('msBetweenMessages').value);
+            const partitionStrategy = document.getElementById('partitionStrategy').value;
             
-            // Update UI
-            document.querySelectorAll('.stage-card').forEach(card => {
-                card.classList.remove('active');
-            });
-            document.getElementById(`stage${data.stage}Card`).classList.add('active');
+            // Validate inputs
+            if (producerCount < 1 || producerCount > 20) {
+                showStatus('Producer count must be between 1 and 20', 'error');
+                return;
+            }
+            
+            if (msBetweenMessages < 0 || msBetweenMessages > 1000) {
+                showStatus('Delay must be between 0 and 1000 ms', 'error');
+                return;
+            }
 
-            const stageTitles = {
-                1: 'Stage 1: Baseline',
-                2: 'Stage 2: Hot Partition Problem',
-                3: 'Stage 3: Balanced Distribution'
-            };
-            
-            document.getElementById('currentStageTitle').textContent = stageTitles[data.stage];
-            addLog(`🎯 ${stageTitles[data.stage]} activated`, 'success');
-
-            // CLEAR CHARTS - reset to empty state
-            lagChart.data.labels = [];
-            lagChart.data.datasets[0].data = [];
-            lagChart.data.datasets[0].backgroundColor = [];
-            lagChart.update();
-            
-            consumerChart.data.labels = [];
-            consumerChart.data.datasets[0].data = [];
-            consumerChart.update();
-            
-            // Reset status values
-            document.getElementById('totalLag').textContent = '0';
-            document.getElementById('messageRate').textContent = '0';
-        }
-
-        // Activate stage via API
-        async function activateStage(stageNum) {
             try {
-                addLog(`⏳ Activating stage ${stageNum}...`, 'info');
+                setProducerControlsEnabled(false);
+                showStatus('Starting producer...', 'success');
+                addLog(`⏳ Starting ${producerCount} producer(s) with ${partitionStrategy} strategy...`, 'info');
                 
-                const response = await fetch(`${API_BASE}/api/stage/${stageNum}`, {
-                    method: 'POST'
+                const response = await fetch(`${API_BASE}/api/start-producer`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        producerCount,
+                        msBetweenMessages,
+                        partitionStrategy
+                    })
                 });
                 
                 const result = await response.json();
                 
                 if (result.success) {
-                    addLog(`✅ Stage ${stageNum} activated successfully`, 'success');
+                    isProducing = true;
+                    document.getElementById('startBtn').disabled = true;
+                    document.getElementById('stopBtn').disabled = false;
+                    document.getElementById('currentStatusTitle').textContent = 
+                        `Producing (${partitionStrategy === 'ROUND_ROBIN' ? 'Balanced' : 'Hot Partition'})`;
+                    
+                    showStatus('✅ Producer started successfully', 'success');
+                    addLog(`✅ Producer started: ${producerCount} producer(s), ${msBetweenMessages}ms delay, ${partitionStrategy}`, 'success');
                 } else {
-                    addLog(`❌ Failed to activate stage: ${result.error}`, 'warning');
+                    setProducerControlsEnabled(true);
+                    showStatus(`❌ Failed to start producer: ${result.error}`, 'error');
+                    addLog(`❌ Failed to start producer: ${result.error}`, 'warning');
                 }
             } catch (error) {
-                console.error('Error activating stage:', error);
+                setProducerControlsEnabled(true);
+                console.error('Error starting producer:', error);
+                showStatus(`❌ Error: ${error.message}`, 'error');
                 addLog(`❌ Error: ${error.message}`, 'warning');
             }
+        }
+
+        // Stop producer
+        async function stopProducer() {
+            try {
+                document.getElementById('stopBtn').disabled = true;
+                showStatus('Stopping producer...', 'success');
+                addLog('⏳ Stopping producer...', 'info');
+                
+                const response = await fetch(`${API_BASE}/api/stop-producer`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    isProducing = false;
+                    setProducerControlsEnabled(true);
+                    document.getElementById('currentStatusTitle').textContent = 'Stopped';
+                    
+                    showStatus('✅ Producer stopped successfully', 'success');
+                    addLog('✅ Producer stopped', 'success');
+                } else {
+                    document.getElementById('stopBtn').disabled = false;
+                    showStatus(`❌ Failed to stop producer: ${result.error}`, 'error');
+                    addLog(`❌ Failed to stop producer: ${result.error}`, 'warning');
+                }
+            } catch (error) {
+                document.getElementById('stopBtn').disabled = false;
+                console.error('Error stopping producer:', error);
+                showStatus(`❌ Error: ${error.message}`, 'error');
+                addLog(`❌ Error: ${error.message}`, 'warning');
+            }
+        }
+
+        function setProducerControlsEnabled(enabled) {
+            document.getElementById('producerCount').disabled = !enabled;
+            document.getElementById('msBetweenMessages').disabled = !enabled;
+            document.getElementById('partitionStrategy').disabled = !enabled;
+            document.getElementById('startBtn').disabled = !enabled;
+            document.getElementById('stopBtn').disabled = enabled;
+        }
+
+        function showStatus(message, type) {
+            const statusEl = document.getElementById('producerStatus');
+            statusEl.textContent = message;
+            statusEl.className = `status-message ${type}`;
+            
+            // Auto-hide after 5 seconds
+            setTimeout(() => {
+                statusEl.style.display = 'none';
+            }, 5000);
         }
 
         // Logging

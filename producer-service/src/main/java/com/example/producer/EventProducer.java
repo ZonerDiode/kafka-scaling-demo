@@ -1,7 +1,8 @@
 package com.example.producer;
 
 import java.time.Duration;
-import java.util.Optional;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
@@ -10,13 +11,16 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.stereotype.Service;
 
+/**
+ * Starts and stops scheduled tasks that send messages to Kafka.
+ */
 @Service
 public class EventProducer {
 
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final TaskScheduler taskScheduler;
     private final AtomicLong msgCount = new AtomicLong(0);
-    private ScheduledFuture<?> currentTask;
+    private final List<ScheduledFuture<?>> currentTasks = new ArrayList<>();
     
     private static final Logger logger = LoggerFactory.getLogger(EventProducer.class);
 
@@ -29,29 +33,35 @@ public class EventProducer {
     * Send events to a Kafka topic at a set rate using the specified {@link EventPartitioner.Strategy} 
     * until {@link EventProducer#stop()} is called or send is called again.
     * 
+     * @param producerCount How many concurrent producers to start.
      * @param topic The topic destination.
      * @param msRate Send every MilliSeconds.
      * @param keyStrategy The key strategy to use.
     */
-    public void send(String topic, long msRate, EventPartitioner.Strategy keyStrategy) {
+    public void send(int producerCount, String topic, long msRate, EventPartitioner.Strategy keyStrategy) {
         
         stop();
         
         EventPartitioner.setMode(keyStrategy);
         
-        currentTask = taskScheduler.scheduleAtFixedRate(() -> 
-        {
-            long count = msgCount.incrementAndGet();
-            
-            kafkaTemplate.send(
-                    topic, 
-                    String.format("Event message from %s", RandomNameGenerator.generateName()));
-            
-            if (count % 500 == 0) {
-                logger.info("Sent {} messages using key strategy {}", count, keyStrategy);
-            }
+        for (int producerNumber = 0; producerNumber < producerCount; producerNumber++) {
 
-        }, Duration.ofMillis(msRate));
+            var newTask = taskScheduler.scheduleAtFixedRate(() -> 
+            {
+                long count = msgCount.incrementAndGet();
+
+                kafkaTemplate.send(
+                        topic, 
+                        String.format("Event message from %s", RandomNameGenerator.generateName()));
+
+                if (count % 500 == 0) {
+                    logger.info("Sent {} messages using key strategy {}", count, keyStrategy);
+                }
+
+            }, Duration.ofMillis(msRate));
+
+            currentTasks.add(newTask);
+        }
     }
     
     /**
@@ -59,7 +69,6 @@ public class EventProducer {
      */
     public void stop() {
         
-        Optional.ofNullable(currentTask)
-                .ifPresent(t-> t.cancel(true));
+        currentTasks.forEach(t -> t.cancel(true));
     }
 }

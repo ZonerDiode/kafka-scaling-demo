@@ -14,7 +14,6 @@ app.use(express.static('public'));
 // WebSocket server
 const wss = new WebSocket.Server({ noServer: true });
 
-let currentStage = 0;
 let metricsInterval;
 
 // Kafka configuration
@@ -22,30 +21,9 @@ const KAFKA_CONTAINER = process.env.KAFKA_CONTAINER || 'kafka';
 const BOOTSTRAP_SERVERS = process.env.BOOTSTRAP_SERVERS || 'localhost:9092';
 const PRODUCER_URL = process.env.PRODUCER_URL || 'http://producer:8081';
 
-// Stage configurations
-const STAGE_CONFIGS = {
-    1: {
-        endpoint: `${PRODUCER_URL}/api/run-demo-topic-single`,
-        topicName: 'demo-topic-single',
-        consumerGroup: 'demo-group-single',
-        partitions: 1,
-        description: 'Single partition, single key'
-    },
-    2: {
-        endpoint: `${PRODUCER_URL}/api/run-demo-topic-hot`,
-        topicName: 'demo-topic',
-        consumerGroup: 'demo-group',
-        partitions: 4,
-        description: 'Multiple partitions, hot partition'
-    },
-    3: {
-        endpoint: `${PRODUCER_URL}/api/run-demo-topic`,
-        topicName: 'demo-topic',
-        consumerGroup: 'demo-group',
-        partitions: 4,
-        description: 'Multiple partitions, balanced'
-    }
-};
+// Fixed topic and consumer group
+const TOPIC_NAME = 'demo-topic';
+const CONSUMER_GROUP = 'demo-group';
 
 // Execute Kafka commands
 async function execKafkaCommand(command) {
@@ -64,7 +42,6 @@ async function execKafkaCommand(command) {
 async function getConsumerGroupLag(topicName, consumerGroup) {
     const cmd = `kafka-consumer-groups --bootstrap-server ${BOOTSTRAP_SERVERS} --describe --group ${consumerGroup}`;
     const result = await execKafkaCommand(cmd);
-    const groupReplace = consumerGroup + '-1';
     
     if (!result.success || !result.output) {
         return { partitions: [], totalLag: 0, consumers: 0 };
@@ -95,7 +72,7 @@ async function getConsumerGroupLag(topicName, consumerGroup) {
             const currentOffset = Number.parseInt(parts[3]) || 0;
             const logEndOffset = Number.parseInt(parts[4]) || 0;
             const lag = Number.parseInt(parts[5]) || 0;
-            const consumerId = (parts[6] || '-').replace(groupReplace, '');
+            const consumerId = parts[6] || '-';
 
             if (!Number.isNaN(partition)) {
                 partitions.push({
@@ -103,7 +80,7 @@ async function getConsumerGroupLag(topicName, consumerGroup) {
                     currentOffset,
                     logEndOffset,
                     lag,
-                    consumerId: consumerId === '-' ? 'Unassigned' : consumerId
+                    consumerId: consumerId === '-' ? 'Unassigned' : consumerId.replace(consumerGroup + '-1-', '')
                 });
 
                 totalLag += lag;
@@ -142,22 +119,151 @@ async function getTopicDetails(topicName) {
     };
 }
 
-// Activate stage by calling producer endpoint
-async function activateStage(stageNum) {
-    console.log(`Activating stage ${stageNum}...`);
-    
-    const config = STAGE_CONFIGS[stageNum];
-    if (!config) {
-        return { success: false, error: 'Invalid stage' };
-    }
+// Broadcast to all WebSocket clients
+function broadcastToClients(data) {
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify(data));
+        }
+    });
+}
 
+// Collect and broadcast metrics
+async function collectMetrics() {
     try {
-        // Clear previous offset tracking for clean rate calculation
-        previousOffsets = {};
+        const [lagData, topicData] = await Promise.all([
+            getConsumerGroupLag(TOPIC_NAME, CONSUMER_GROUP),
+            getTopicDetails(TOPIC_NAME)
+        ]);
+
+        // Only log when topic exists
+        if (topicData.exists && lagData.partitions.length > 0) {
+            console.log('Metrics collected:', {
+                topic: TOPIC_NAME,
+                partitions: lagData.partitions.length,
+                consumers: lagData.consumers,
+                totalLag: lagData.totalLag
+            });
+        }
+
+        const rates = calculateMessageRates(lagData.partitions);
         
-        // Call producer endpoint to activate the stage
-        console.log(`Calling producer endpoint: ${config.endpoint}`);
-        const response = await fetch(config.endpoint, { 
+        const metrics = {
+            type: 'metrics',
+            timestamp: Date.now(),
+            partitionCount: topicData.partitionCount,
+            consumerCount: lagData.consumers,
+            totalLag: lagData.totalLag,
+            partitions: lagData.partitions,
+            producerRate: rates.producerRate,
+            consumerRate: rates.consumerRate
+        };
+
+        broadcastToClients(metrics);
+        return metrics;
+    } catch (error) {
+        console.error('Error collecting metrics:', error);
+        return null;
+    }
+}
+
+// Calculate message rates based on offset changes with smoothing
+let previousOffsets = {};
+let rateHistory = { producer: [], consumer: [] };
+const RATE_HISTORY_SIZE = 5; // Number of samples to average
+
+function calculateMessageRates(partitions) {
+    const currentTime = Date.now();
+    let totalProducerRate = 0;
+    let totalConsumerRate = 0;
+
+    partitions.forEach(p => {
+        const key = `p${p.partition}`;
+        const previous = previousOffsets[key];
+        
+        if (previous) {
+            const timeDiff = (currentTime - previous.time) / 1000; // seconds
+            
+            if (timeDiff > 0) {
+                // Producer rate: change in log-end-offset (total messages produced)
+                const producedDiff = p.logEndOffset - previous.logEndOffset;
+                const producerRate = producedDiff / timeDiff;
+                totalProducerRate += producerRate;
+                
+                // Consumer rate: change in current-offset (messages consumed)
+                const consumedDiff = p.currentOffset - previous.currentOffset;
+                const consumerRate = consumedDiff / timeDiff;
+                totalConsumerRate += consumerRate;
+            }
+        }
+
+        previousOffsets[key] = {
+            logEndOffset: p.logEndOffset,
+            currentOffset: p.currentOffset,
+            time: currentTime
+        };
+    });
+
+    // Add to history for smoothing
+    rateHistory.producer.push(totalProducerRate);
+    rateHistory.consumer.push(totalConsumerRate);
+    
+    // Keep only last N samples
+    if (rateHistory.producer.length > RATE_HISTORY_SIZE) {
+        rateHistory.producer.shift();
+    }
+    if (rateHistory.consumer.length > RATE_HISTORY_SIZE) {
+        rateHistory.consumer.shift();
+    }
+    
+    // Calculate moving average
+    const avgProducerRate = rateHistory.producer.reduce((a, b) => a + b, 0) / rateHistory.producer.length;
+    const avgConsumerRate = rateHistory.consumer.reduce((a, b) => a + b, 0) / rateHistory.consumer.length;
+
+    return {
+        producerRate: Math.round(avgProducerRate),
+        consumerRate: Math.round(avgConsumerRate)
+    };
+}
+
+// REST API endpoints
+app.post('/api/start-producer', async (req, res) => {
+    try {
+        console.log('Starting producer with config:', req.body);
+        
+        // Clear previous offset tracking and rate history for clean rate calculation
+        previousOffsets = {};
+        rateHistory = { producer: [], consumer: [] };
+        
+        // Forward the request to the producer service
+        const response = await fetch(`${PRODUCER_URL}/api/produce-messages`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(req.body)
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Producer endpoint returned ${response.status}`);
+        }
+        
+        const result = await response.text();
+        console.log(`Producer response: ${result}`);
+        
+        res.json({ success: true, message: result });
+    } catch (error) {
+        console.error('Error starting producer:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/stop-producer', async (req, res) => {
+    try {
+        console.log('Stopping producer');
+        
+        // Forward the request to the producer service
+        const response = await fetch(`${PRODUCER_URL}/api/stop-producing`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -171,115 +277,11 @@ async function activateStage(stageNum) {
         const result = await response.text();
         console.log(`Producer response: ${result}`);
         
-        // Update current stage
-        currentStage = stageNum;
-        
-        // Wait for things to stabilize
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        broadcastToClients({
-            type: 'stage-activated',
-            stage: stageNum,
-            config: {
-                partitions: config.partitions,
-                description: config.description
-            }
-        });
-
-        return { success: true, stage: stageNum };
+        res.json({ success: true, message: result });
     } catch (error) {
-        console.error('Stage activation error:', error);
-        return { success: false, error: error.message };
+        console.error('Error stopping producer:', error);
+        res.status(500).json({ success: false, error: error.message });
     }
-}
-
-// Broadcast to all WebSocket clients
-function broadcastToClients(data) {
-    wss.clients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify(data));
-        }
-    });
-}
-
-// Collect and broadcast metrics
-async function collectMetrics() {
-    if (currentStage === 0) {
-        return null;
-    }
-
-    const config = STAGE_CONFIGS[currentStage];
-    if (!config) {
-        return null;
-    }
-
-    try {
-        const [lagData, topicData] = await Promise.all([
-            getConsumerGroupLag(config.topicName, config.consumerGroup),
-            getTopicDetails(config.topicName)
-        ]);
-
-        // Only log when topic exists
-        if (topicData.exists && lagData.partitions.length > 0) {
-            console.log('Metrics collected:', {
-                stage: currentStage,
-                topic: config.topicName,
-                partitions: lagData.partitions.length,
-                consumers: lagData.consumers,
-                totalLag: lagData.totalLag
-            });
-        }
-
-        const metrics = {
-            type: 'metrics',
-            timestamp: Date.now(),
-            stage: currentStage,
-            partitionCount: topicData.partitionCount,
-            consumerCount: lagData.consumers,
-            totalLag: lagData.totalLag,
-            partitions: lagData.partitions,
-            messageRate: calculateMessageRate(lagData.partitions)
-        };
-
-        broadcastToClients(metrics);
-        return metrics;
-    } catch (error) {
-        console.error('Error collecting metrics:', error);
-        return null;
-    }
-}
-
-// Calculate message rate based on offset changes
-let previousOffsets = {};
-function calculateMessageRate(partitions) {
-    const currentTime = Date.now();
-    let totalRate = 0;
-
-    partitions.forEach(p => {
-        const key = `p${p.partition}`;
-        const previous = previousOffsets[key];
-        
-        if (previous) {
-            const offsetDiff = p.logEndOffset - previous.offset;
-            const timeDiff = (currentTime - previous.time) / 1000; // seconds
-            const rate = timeDiff > 0 ? offsetDiff / timeDiff : 0;
-            totalRate += rate;
-        }
-
-        previousOffsets[key] = {
-            offset: p.logEndOffset,
-            time: currentTime
-        };
-    });
-
-    return Math.round(totalRate);
-}
-
-// REST API endpoints
-app.post('/api/stage/:stageNum', async (req, res) => {
-    const stageNum = Number.parseInt(req.params.stageNum);
-    const result = await activateStage(stageNum);
-    res.json(result);
 });
 
 app.get('/api/metrics', async (req, res) => {
@@ -288,44 +290,25 @@ app.get('/api/metrics', async (req, res) => {
 });
 
 app.get('/api/status', async (req, res) => {
-    if (currentStage === 0) {
-        return res.json({
-            currentStage: 0,
-            partitionCount: 0,
-            consumerCount: 0,
-            totalLag: 0
-        });
-    }
-
-    const config = STAGE_CONFIGS[currentStage];
     const [lagData, topicData] = await Promise.all([
-        getConsumerGroupLag(config.topicName, config.consumerGroup),
-        getTopicDetails(config.topicName)
+        getConsumerGroupLag(TOPIC_NAME, CONSUMER_GROUP),
+        getTopicDetails(TOPIC_NAME)
     ]);
 
     res.json({
-        currentStage,
         partitionCount: topicData.partitionCount,
         consumerCount: lagData.consumers,
         totalLag: lagData.totalLag
     });
 });
 
-app.get('/api/debug/consumer-group/:stage?', async (req, res) => {
-    const stage = req.params.stage ? Number.parseInt(req.params.stage) : currentStage;
-    const config = STAGE_CONFIGS[stage];
-    
-    if (!config) {
-        return res.json({ error: 'Invalid stage' });
-    }
-
-    const cmd = `kafka-consumer-groups --bootstrap-server ${BOOTSTRAP_SERVERS} --describe --group ${config.consumerGroup}`;
+app.get('/api/debug/consumer-group', async (req, res) => {
+    const cmd = `kafka-consumer-groups --bootstrap-server ${BOOTSTRAP_SERVERS} --describe --group ${CONSUMER_GROUP}`;
     const result = await execKafkaCommand(cmd);
     
     res.json({
-        stage,
-        topic: config.topicName,
-        consumerGroup: config.consumerGroup,
+        topic: TOPIC_NAME,
+        consumerGroup: CONSUMER_GROUP,
         success: result.success,
         output: result.output,
         error: result.error
@@ -358,14 +341,15 @@ function startMetricsCollection() {
         collectMetrics().catch(err => {
             console.error('Metrics collection error:', err);
         });
-    }, 400); // Collect every 400 milliseconds
+    }, 300); // Collect every 300 milliseconds
 }
 
 // HTTP server upgrade for WebSocket
 const server = app.listen(port, () => {
     console.log(`Kafka Demo Backend running on port ${port}`);
     console.log(`WebSocket server ready`);
-    console.log(`Stage configurations:`, STAGE_CONFIGS);
+    console.log(`Monitoring topic: ${TOPIC_NAME}`);
+    console.log(`Monitoring consumer group: ${CONSUMER_GROUP}`);
     startMetricsCollection();
 });
 

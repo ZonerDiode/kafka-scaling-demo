@@ -5,17 +5,15 @@ import java.util.Random;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.kafka.clients.producer.Partitioner;
 import org.apache.kafka.common.Cluster;
-import org.apache.kafka.common.utils.Utils;
 
 /**
  * Custom partition selector for demonstrating key techniques.
  */
 public class EventPartitioner implements Partitioner {
 
-    private static volatile Strategy mode = Strategy.HASH;
+    private static volatile Strategy mode = Strategy.ROUND_ROBIN;
 
     public enum Strategy {
-        HASH,
         HOT_PARTITION,
         ROUND_ROBIN
     }
@@ -54,8 +52,6 @@ public class EventPartitioner implements Partitioner {
             }
 
             case ROUND_ROBIN -> rrCounter.getAndIncrement() % numPartitions;
-
-            case HASH -> Utils.toPositive(Utils.murmur2(keyBytes)) % numPartitions;
         };
     }
 

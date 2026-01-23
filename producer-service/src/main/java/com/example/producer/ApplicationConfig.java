@@ -8,6 +8,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties()
 public record ApplicationConfig (
     String bootstrapServers,
-    int millisecondsBetweenMessages,
     int numberOfPartitions
- ) {}
+) {
+    public ApplicationConfig {
+        if (bootstrapServers == null) bootstrapServers = "localhost:9092";
+        if (numberOfPartitions == 0) numberOfPartitions = 3;
+    }
+}
