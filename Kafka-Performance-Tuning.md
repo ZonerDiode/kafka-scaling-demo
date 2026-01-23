@@ -225,15 +225,14 @@ environment:
 ### Test Scenarios:
 ```bash
 # Scenario 1: High producer rate
-producerCount: 10
+producerCount: 5
 msBetweenMessages: 1
 partitionStrategy: ROUND_ROBIN
 
 # Scenario 2: Sustained load
-producerCount: 5
+producerCount: 1
 msBetweenMessages: 1
 partitionStrategy: ROUND_ROBIN
-Duration: 5 minutes
 
 # Scenario 3: Hot partition problem
 producerCount: 5

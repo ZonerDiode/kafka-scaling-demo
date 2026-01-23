@@ -170,7 +170,7 @@ async function collectMetrics() {
 // Calculate message rates based on offset changes with smoothing
 let previousOffsets = {};
 let rateHistory = { producer: [], consumer: [] };
-const RATE_HISTORY_SIZE = 5; // Number of samples to average
+const RATE_HISTORY_SIZE = 15; // Number of samples to average
 
 function calculateMessageRates(partitions) {
     const currentTime = Date.now();

@@ -18,7 +18,6 @@ Also includes standard kafka monitor @ http://localhost:8080
 To change settings, stop the containers (**docker compose down -v**) then edit these settings in docker-compose.yml:
 
 ### Producer
-- **MILLISECONDS_BETWEEN_MESSAGES**: Controls the delay between messages, defaults to 1
 - **NUMBER_OF_PARTITIONS**: How many partitions to use for the topic, defaults to 6
 
 ### Consumer
@@ -27,31 +26,36 @@ To change settings, stop the containers (**docker compose down -v**) then edit t
 
 ## How It Works:
 
-- Click Stage Button → Dashboard calls producer/api/run-stage-X
+- Click Start Producer Button → Dashboard calls producer/api/produce-messages
 - Producer generates messages into the topic
 - Consumers read messages → Simulate doing work
-- Dashboard server monitors metrics → Polls Kafka every 400 ms
+- Dashboard server monitors metrics → Polls Kafka every 300 ms
 - Dashboard server Streams to UI → Via WebSocket, charts update in real-time
 
 ## Prerequisites
 
 - Docker & Docker Compose
 - Java 21+ (for local development)
-- Maven (for building JARs)
+- Maven (for local development)
 
-## Demo Stages
+### Test Scenarios To Try:
+What's your high score? Try some of the suggestions in Kafka-Performance-Tuning.md
 
-### Stage 1: Single Partition (Limited Scalability)
-- Demonstrates basic operation with single consumer
-- Topic with 1 overloaded partition
-- 1 consumer actively consuming starts to fall behind
+```bash
+# Scenario 1: High producer rate
+producerCount: 14
+msBetweenMessages: 3
+partitionStrategy: ROUND_ROBIN
+partitions:24
+replicas: 12
 
-### Stage 2: Hot Consumer
-- Demonstrates poor key strategy that causes uneven distribution among partitions
-- Partitions divide messages 50% into one partition, rest are split between remaining partitions
-- One partition starts to become overloaded
+# Scenario 2: Sustained load
+producerCount: 1
+msBetweenMessages: 1
+partitionStrategy: ROUND_ROBIN
 
-### Stage 3: Consumer Group Balanced
-- Demonstrates balanced key strategy that evenly distributes the messages across all partitions
-- Partitions dividing messages evenly with round-robin strategy.
-- Even lag across partitions
+# Scenario 3: Hot partition problem
+producerCount: 2
+msBetweenMessages: 1
+partitionStrategy: HOT_PARTITION
+```

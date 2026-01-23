@@ -1,3 +1,4 @@
+/* Reset & Base Styles */
 * {
     margin: 0;
     padding: 0;
@@ -54,113 +55,6 @@ h1 {
     color: white;
 }
 
-.stage-controls {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 20px;
-    margin-bottom: 15px;
-}
-
-.stage-card {
-    background: white;
-    border-radius: 12px;
-    padding: 25px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-    transition: transform 0.2s, box-shadow 0.2s;
-}
-
-.stage-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 15px 40px rgba(0,0,0,0.3);
-}
-
-.stage-card.active {
-    border: 3px solid #667eea;
-    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-}
-
-.stage-card h3 {
-    color: #333;
-    margin-bottom: 10px;
-    font-size: 1.3em;
-}
-
-.stage-description {
-    color: #666;
-    margin-bottom: 10px;
-    font-size: 0.95em;
-    line-height: 1.5;
-}
-
-.stage-details {
-    background: #f8f9fa;
-    padding: 10px;
-    border-radius: 6px;
-    margin-bottom: 10px;
-    font-size: 0.9em;
-}
-
-.stage-details div {
-    margin: 5px 0;
-}
-
-.stage-details strong {
-    color: #667eea;
-}
-
-button {
-    background: #667eea;
-    color: white;
-    border: none;
-    padding: 12px 24px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 1em;
-    font-weight: 600;
-    transition: background 0.3s, transform 0.1s;
-    width: 100%;
-}
-
-button:hover {
-    background: #5568d3;
-    transform: scale(1.02);
-}
-
-button:active {
-    transform: scale(0.98);
-}
-
-button:disabled {
-    background: #ccc;
-    cursor: not-allowed;
-    transform: none;
-}
-
-.metrics-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-    gap: 20px;
-    margin-bottom: 20px;
-}
-
-.metric-card {
-    background: white;
-    border-radius: 12px;
-    padding: 20px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-}
-
-.metric-card h3 {
-    color: #333;
-    margin-bottom: 15px;
-    font-size: 1.2em;
-}
-
-.chart-container {
-    position: relative;
-    height: 300px;
-}
-
 .status-banner {
     background: white;
     border-radius: 12px;
@@ -197,54 +91,6 @@ button:disabled {
     color: #666;
     font-size: 0.9em;
     margin-top: 5px;
-}
-
-.badge {
-    display: inline-block;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 0.85em;
-    font-weight: 600;
-    margin-left: 8px;
-}
-
-.badge-hot {
-    background: #ff6b6b;
-    color: white;
-}
-
-.badge-balanced {
-    background: #51cf66;
-    color: white;
-}
-
-.logs-container {
-    background: #1e1e1e;
-    border-radius: 12px;
-    padding: 15px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-    max-height: 300px;
-    overflow-y: auto;
-}
-
-.log-entry {
-    color: #d4d4d4;
-    font-family: 'Courier New', monospace;
-    font-size: 0.9em;
-    margin: 5px 0;
-    padding: 5px;
-    border-left: 3px solid #667eea;
-    padding-left: 10px;
-}
-
-.log-entry.warning {
-    border-left-color: #ffa500;
-    color: #ffa500;
-}
-
-.log-entry.success {
-    border-left-color: #51cf66;
-    color: #51cf66;
 }
 
 .producer-controls {
@@ -383,6 +229,65 @@ button:disabled {
     background: #f8d7da;
     color: #721c24;
     border: 1px solid #f5c6cb;
+}
+
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.metric-card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+}
+
+.metric-card h3 {
+    color: #333;
+    margin-bottom: 15px;
+    font-size: 1.2em;
+}
+
+.chart-container {
+    position: relative;
+    height: 300px;
+}
+
+.logs-container {
+    background: #1e1e1e;
+    border-radius: 12px;
+    padding: 15px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.log-entry {
+    color: #d4d4d4;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9em;
+    margin: 5px 0;
+    padding: 5px;
+    border-left: 3px solid #667eea;
+    padding-left: 10px;
+}
+
+.log-entry.info {
+    border-left-color: #667eea;
+    color: #667eea;
+}
+
+.log-entry.warning {
+    border-left-color: #ffa500;
+    color: #ffa500;
+}
+
+.log-entry.success {
+    border-left-color: #51cf66;
+    color: #51cf66;
 }
 
 @media (max-width: 768px) {
